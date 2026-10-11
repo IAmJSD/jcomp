@@ -216,7 +216,7 @@ jobs:
             fi
             echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ~/.npmrc
           fi
-          npm publish dist/jcomp-wasm-*.tgz --access public --provenance
+          npm publish ./dist/jcomp-wasm-*.tgz --access public --provenance
 
   release:
     needs: [macos, linux, windows, wasm]
