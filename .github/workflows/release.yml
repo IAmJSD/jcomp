@@ -200,22 +200,13 @@ jobs:
       - name: Publish
         env:
           VERSION: ${{ needs.version.outputs.version }}
-          # Only for the first release: npm can't trust a publisher for a
-          # package that doesn't exist yet. Delete the secret afterwards.
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -eo pipefail
           if npm view "jcomp-wasm@$VERSION" version >/dev/null 2>&1; then
             echo "jcomp-wasm@$VERSION is already on npm; not publishing."
             exit 0
           fi
-          if ! npm view jcomp-wasm name >/dev/null 2>&1; then
-            if [ -z "$NPM_TOKEN" ]; then
-              echo "jcomp-wasm isn't on npm yet, and trusted publishing can only publish an existing package. Add an NPM_TOKEN secret for the first release." >&2
-              exit 1
-            fi
-            echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ~/.npmrc
-          fi
+          # ./ so npm doesn't read dist/... as a GitHub repo
           npm publish ./dist/jcomp-wasm-*.tgz --access public --provenance
 
   release:
