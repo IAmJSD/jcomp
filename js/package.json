@@ -1,6 +1,6 @@
 {
   "name": "jcomp-wasm",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Lossless, structure-aware JSON compression in WebAssembly, parallel across Web Workers",
   "license": "MIT",
   "author": "Astrid Gealer",
