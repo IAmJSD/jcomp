@@ -1,0 +1,25 @@
+[package]
+name = "jcomp"
+version = "0.1.0"
+edition = "2024"
+authors = ["Astrid Gealer"]
+description = "Lossless, structure-aware JSON compression"
+license = "MIT"
+repository = "https://github.com/IAmJSD/jcomp"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[features]
+# rayon thread pool for wasm builds with shared memory (see js/)
+wasm-threads = ["dep:rayon"]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+liblzma = { version = "0.4.8", features = ["static"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+liblzma = { version = "0.4.8", features = ["wasm"] }
+rayon = { version = "1.11", optional = true }

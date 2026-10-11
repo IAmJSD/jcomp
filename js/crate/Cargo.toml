@@ -1,0 +1,30 @@
+[package]
+name = "jcomp-wasm"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/IAmJSD/jcomp"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+# one of these per build, so a page that only decompresses never loads the encoder
+compress = []
+decompress = []
+# shared-memory build: a rayon pool on Web Workers
+threads = ["jcomp/wasm-threads", "dep:wasm-bindgen-rayon", "dep:dlmalloc"]
+
+[dependencies]
+jcomp = { path = "../.." }
+wasm-bindgen = "=0.2.127"
+js-sys = "=0.3.104"
+wasm-bindgen-rayon = { version = "1.3.0", features = ["no-bundler"], optional = true }
+dlmalloc = { version = "0.2.14", optional = true }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"

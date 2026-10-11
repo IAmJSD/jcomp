@@ -1,0 +1,44 @@
+{
+  "name": "jcomp-wasm",
+  "version": "0.1.0",
+  "description": "Lossless, structure-aware JSON compression in WebAssembly, parallel across Web Workers",
+  "license": "MIT",
+  "author": "Astrid Gealer",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IAmJSD/jcomp.git",
+    "directory": "js"
+  },
+  "homepage": "https://github.com/IAmJSD/jcomp/tree/main/js#readme",
+  "bugs": "https://github.com/IAmJSD/jcomp/issues",
+  "type": "module",
+  "exports": {
+    "./compress": {
+      "types": "./dist/compress.d.ts",
+      "default": "./dist/compress.js"
+    },
+    "./decompress": {
+      "types": "./dist/decompress.d.ts",
+      "default": "./dist/decompress.js"
+    }
+  },
+  "files": [
+    "dist",
+    "wasm/*/*.js",
+    "wasm/*/*.d.ts",
+    "wasm/*/*.wasm",
+    "wasm/*/snippets/**/*.js"
+  ],
+  "sideEffects": [
+    "./dist/*.worker.js",
+    "./wasm/*/snippets/**"
+  ],
+  "scripts": {
+    "build": "./build.sh",
+    "test": "node test/run.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.64.0",
+    "typescript": "7.0.2"
+  }
+}

@@ -1,0 +1,234 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # The tag, Cargo.toml and js/package.json must all name one version.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - id: v
+        run: |
+          set -eo pipefail
+          cargo=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          npm=$(node -p 'require("./js/package.json").version')
+          if [ "$cargo" != "$npm" ]; then
+            echo "Cargo.toml is $cargo but js/package.json is $npm" >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" == refs/tags/v* && "${GITHUB_REF#refs/tags/v}" != "$cargo" ]]; then
+            echo "tag ${GITHUB_REF#refs/tags/} does not match version $cargo" >&2
+            exit 1
+          fi
+          echo "version=$cargo" >> "$GITHUB_OUTPUT"
+
+  macos:
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # Both halves of the universal binary.
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Test
+        run: cargo test --release
+
+      - name: Build
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+          mkdir -p dist
+          lipo -create -output dist/jcomp-macos-universal \
+            target/aarch64-apple-darwin/release/jcomp \
+            target/x86_64-apple-darwin/release/jcomp
+          strip -x dist/jcomp-macos-universal
+          lipo -info dist/jcomp-macos-universal
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: jcomp-macos
+          path: dist/*
+
+  linux:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: jcomp-linux-x86_64
+          - os: ubuntu-24.04-arm
+            artifact: jcomp-linux-aarch64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Test
+        run: cargo test --release
+
+      - name: Build
+        run: |
+          cargo build --release
+          mkdir -p dist
+          # Arch-suffixed: both Linux jobs publish into one release, and
+          # same-named assets would collide there.
+          cp target/release/jcomp "dist/jcomp-linux-$(uname -m)"
+          strip --strip-unneeded "dist/jcomp-linux-$(uname -m)"
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/*
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Test
+        run: cargo test --release
+
+      - name: Build
+        shell: pwsh
+        run: |
+          cargo build --release
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item target/release/jcomp.exe dist/jcomp-windows-x86_64.exe
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: jcomp-windows-x86_64
+          path: dist/*
+
+  # The jcomp-wasm npm package: four wasm builds plus the TypeScript, tested
+  # in headless Chrome against the native CLI, packed into a tarball that the
+  # publish job uploads unchanged.
+  wasm:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      # The shared-memory build rebuilds std with atomics. Nightly goes first:
+      # each of these steps makes its toolchain the default, and everything
+      # but that build uses stable.
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+            js/crate -> target
+      - uses: taiki-e/install-action@v2
+        with:
+          # Must match the wasm-bindgen pin in js/crate/Cargo.toml.
+          tool: wasm-bindgen@0.2.127
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+
+      - name: System deps
+        run: |
+          sudo apt-get update
+          # clang for liblzma's C sources (it targets wasm32), llvm for llvm-ar.
+          sudo apt-get install -y clang llvm
+
+      - name: Build
+        env:
+          CC_wasm32_unknown_unknown: clang
+          AR_wasm32_unknown_unknown: llvm-ar
+        working-directory: js
+        run: |
+          npm ci
+          ./build.sh
+
+      - name: Test
+        run: |
+          cargo build --release
+          cd js && npm test
+
+      - name: Pack
+        working-directory: js
+        run: |
+          mkdir -p ../dist
+          npm pack --pack-destination ../dist
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: jcomp-wasm
+          path: dist/*
+
+  # Publishes to npm with trusted publishing (OIDC): no token, and npm adds a
+  # provenance statement. Skipped when the version is already on npm.
+  npm:
+    needs: [version, macos, linux, windows, wasm]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      # Trusted publishing needs npm 11.5.1 or later.
+      - run: npm install -g npm@latest
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: jcomp-wasm
+          path: dist
+
+      - name: Publish
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          # Only for the first release: npm can't trust a publisher for a
+          # package that doesn't exist yet. Delete the secret afterwards.
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -eo pipefail
+          if npm view "jcomp-wasm@$VERSION" version >/dev/null 2>&1; then
+            echo "jcomp-wasm@$VERSION is already on npm; not publishing."
+            exit 0
+          fi
+          if ! npm view jcomp-wasm name >/dev/null 2>&1; then
+            if [ -z "$NPM_TOKEN" ]; then
+              echo "jcomp-wasm isn't on npm yet, and trusted publishing can only publish an existing package. Add an NPM_TOKEN secret for the first release." >&2
+              exit 1
+            fi
+            echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" > ~/.npmrc
+          fi
+          npm publish dist/jcomp-wasm-*.tgz --access public --provenance
+
+  release:
+    needs: [macos, linux, windows, wasm]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
