@@ -6,6 +6,10 @@ authors = ["Astrid Gealer"]
 description = "Lossless, structure-aware JSON compression"
 license = "MIT"
 repository = "https://github.com/IAmJSD/jcomp"
+readme = "README.md"
+keywords = ["json", "compression", "lossless", "xz", "streaming"]
+categories = ["compression", "encoding", "command-line-utilities"]
+include = ["/src", "/tests", "/LICENSE", "/README.md"]
 
 [profile.release]
 opt-level = 3

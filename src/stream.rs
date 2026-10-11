@@ -10,6 +10,9 @@ use super::*;
 /// output is handed out in pieces of about this size
 const PIECE: usize = 1 << 16;
 
+/// Push-based streaming decompressor: feed it input with [`push`](Decoder::push),
+/// collect output with [`pull`](Decoder::pull), and end with
+/// [`finish`](Decoder::finish). The pieces concatenate to exactly the original.
 pub struct Decoder {
     threads: usize,
     /// input not yet consumed

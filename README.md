@@ -6,6 +6,11 @@ reproduces the input **byte for byte**.
 The model contains no knowledge of any particular dataset. The structure it
 exploits is discovered from the document.
 
+Install the CLI with `cargo install jcomp`, or download a binary for macOS,
+Linux or Windows from the [releases](https://github.com/IAmJSD/jcomp/releases).
+Add the library with `cargo add jcomp` ([docs](https://docs.rs/jcomp)), or
+use it in the browser through the `jcomp-wasm` npm package.
+
 ```
 cargo build --release
 target/release/jcomp c [options] in.json out.jc      # compress

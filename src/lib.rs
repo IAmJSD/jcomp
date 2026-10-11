@@ -1,15 +1,31 @@
-//! jcomp: lossless, structure-aware JSON compressor (library). Decompression reproduces
-//! the input byte for byte.
+//! jcomp: a lossless, structure-aware JSON compressor. Decompression reproduces
+//! the input byte for byte, including its whitespace and number formatting.
 //!
-//! Container: MAGIC | varint len(header) | header JSON | varint len(A) | A | B chunks
+//! Valid JSON in any whitespace style (Python's `json.dumps`, Jackson, Go,
+//! hand-edited, ...) gets the structural model: a root array of objects is
+//! coded record by record, and any other document as a tree. Anything that
+//! doesn't reproduce exactly that way (invalid JSON, duplicate keys, ...) is
+//! stored as plain xz.
+//!
+//! ```
+//! let json = br#"[{"id": 1, "name": "a"}, {"id": 2, "name": "b"}]"#;
+//! let packed = jcomp::compress(json, &jcomp::Opts::default());
+//! assert_eq!(jcomp::decompress(&packed, 1).unwrap(), json);
+//! ```
+//!
+//! [`decompress_to`] and [`Decoder`] decompress as a stream, writing a record
+//! array out record by record while its input is still arriving.
+//!
+//! Container: MAGIC | varint len(A) | A | B chunks
+//!   A: xz (raw LZMA2) of the header JSON, a newline, then the record shapes
+//!      and the columns kept out of the model (in raw mode: the input bytes)
 //!   header: serialization style, mode, schema (maps, rational grids), split, chunk sizes
-//!   A: xz (raw LZMA2) of record shapes and the columns kept out of the model
-//!      (in raw mode: of the input bytes)
 //!   B: one range-coded stream per chunk of records
 
 mod analyze;
 mod coder;
 mod fx;
+#[doc(hidden)]
 pub mod json;
 mod layout;
 mod model;
@@ -47,6 +63,7 @@ const XZ_SAMPLE: usize = 1 << 20;
 type Res<T> = Result<T, String>;
 
 // ------------------------------------------------------------------ options
+/// Which record columns the structural model codes, and which go to xz.
 #[derive(Clone, Debug)]
 pub enum Split {
     /// measure every column under both coders and keep the cheaper
@@ -59,12 +76,14 @@ pub enum Split {
     Cols(Vec<String>),
 }
 
+/// Compression options. The default measures every choice and uses every core.
 #[derive(Clone, Debug)]
 pub struct Opts {
     pub split: Split,
     /// chunks of records decoded in parallel; 0 = auto (most parallel layout
     /// within AUTO_CHUNK_SLACK of the best size)
     pub chunks: usize,
+    /// worker threads; the output doesn't depend on it
     pub threads: usize,
     /// report decisions on stderr
     pub verbose: bool,
@@ -910,7 +929,7 @@ fn compress_structured(raw: &[u8], o: &Opts) -> Res<Option<Vec<u8>>> {
     Ok(Some(out))
 }
 
-/// Exact inverse of `compress`.
+/// Exact inverse of [`compress`], decoding chunks on up to `threads` threads.
 pub fn decompress(blob: &[u8], threads: usize) -> Result<Vec<u8>, String> {
     par::on_big_stack(|| {
         let mut d = Decoder::new(threads);
