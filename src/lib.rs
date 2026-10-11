@@ -950,13 +950,13 @@ pub fn decompress_to(mut r: impl Read + Send, mut w: impl Write + Send, threads:
 }
 
 /// peak resident set size in bytes (diagnostics only)
-#[cfg(target_arch = "wasm32")]
+#[cfg(not(unix))]
 fn peak_rss() -> u64 {
     0
 }
 
 /// peak resident set size in bytes (diagnostics only)
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(unix)]
 fn peak_rss() -> u64 {
     unsafe extern "C" {
         fn getrusage(who: i32, usage: *mut [i64; 18]) -> i32;
